@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Vérification Plaques Parking</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f4f4f4; }
+    h1 { margin: 10px; }
+    video { width: 90%; border: 2px solid #333; border-radius: 12px; margin-top: 10px; }
+    #result { font-size: 2em; margin-top: 15px; font-weight: bold; }
+    #lastUpdate { font-size: 0.9em; margin-top: 5px; color: #555; }
+    .ok { color: green; }
+    .not-ok { color: red; }
+    button { margin: 8px; padding: 10px 15px; font-size: 1em; border-radius: 8px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Contrôle des plaques</h1>
+  <div id="lastUpdate">Chargement de la liste...</div>
+  <button id="startCam">📷 Démarrer caméra</button>
+  <button id="scanBtn">🔎 Scanner plaque</button>
+  <br>
+  <video id="video" autoplay playsinline></video>
+  <div id="result"></div>
+
+  <script>
+    let authorizedPlates = [];
+    const repoOwner = 'TON_COMPTE'; // remplace par ton nom GitHub
+    const repoName = 'parking-plaques'; // nom du repo
+    const csvFile = 'plaques.csv'; // nom du fichier CSV dans le repo
+
+    // Charger le CSV depuis GitHub
+    async function loadCSV() {
+      try {
+        // Récupérer le contenu brut du CSV
+        const csvUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/${csvFile}`;
+        const response = await fetch(csvUrl);
+        const text = await response.text();
+        authorizedPlates = text.split(/\r?\n/).map(p => p.trim().toUpperCase());
+
+        // Récupérer la date de dernière mise à jour via l'API GitHub
+        const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${csvFile}`;
+        const apiResponse = await fetch(apiUrl);
+        const json = await apiResponse.json();
+        const lastUpdate = new Date(json.commit?.committer?.date || json.last_modified || Date.now());
+
+        document.getElementById('lastUpdate').textContent = `Dernière mise à jour du CSV : ${lastUpdate.toLocaleString()}`;
+
+      } catch (err) {
+        alert('Erreur lors du chargement du CSV: ' + err);
+      }
+    }
+
+    loadCSV();
+
+    // Démarrer caméra avec mediaDevices
+    const video = document.getElementById('video');
+    document.getElementById('startCam').addEventListener('click', async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert("getUserMedia non supporté par ce navigateur.");
+          return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+      } catch (err) {
+        alert("Erreur accès caméra: " + err);
+      }
+    });
+
+    // Scanner l'image depuis la vidéo
+    document.getElementById('scanBtn').addEventListener('click', async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+
+      document.getElementById('result').textContent = "Analyse en cours...";
+
+      const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
+      let detected = text.replace(/\s+/g, '').toUpperCase();
+
+      let resultDiv = document.getElementById('result');
+      if (authorizedPlates.includes(detected)) {
+        resultDiv.innerHTML = `✅ Autorisé<br>${detected}`;
+        resultDiv.className = "ok";
+      } else {
+        resultDiv.innerHTML = `❌ Pas autorisé<br>${detected}`;
+        resultDiv.className = "not-ok";
+      }
+    });
+  </script>
+</body>
+</html>
