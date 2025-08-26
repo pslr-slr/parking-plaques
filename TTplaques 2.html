@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Vérification Plaques Parking</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f4f4f4; }
+    h1 { margin: 10px; }
+    .video-container { position: relative; display: inline-block; }
+    video { width: 90%; border: 2px solid #333; border-radius: 12px; margin-top: 10px; }
+    .frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 60%;
+      height: 25%;
+      border: 3px solid red;
+      border-radius: 8px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    #result { font-size: 2em; margin-top: 15px; font-weight: bold; }
+    #lastUpdate { font-size: 0.9em; margin-top: 5px; color: #555; }
+    .ok { color: green; }
+    .not-ok { color: red; }
+    button { margin: 8px; padding: 10px 15px; font-size: 1em; border-radius: 8px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Contrôle des plaques</h1>
+  <div id="lastUpdate">Chargement de la liste...</div>
+  <button id="startCam">📷 Démarrer caméra</button>
+  <button id="scanBtn">🔎 Scanner plaque</button>
+  <br>
+  <div class="video-container">
+    <video id="video" autoplay playsinline></video>
+    <div class="frame"></div>
+  </div>
+  <div id="result"></div>
+
+  <script>
+    let authorizedPlates = [];
+    const repoOwner = 'TON_COMPTE'; // remplace par ton nom GitHub
+    const repoName = 'parking-plaques'; // nom du repo
+    const csvFile = 'plaques.csv'; // nom du fichier CSV dans le repo
+
+    // Charger le CSV depuis GitHub
+    async function loadCSV() {
+      try {
+        const csvUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/${csvFile}`;
+        const response = await fetch(csvUrl);
+        const text = await response.text();
+        authorizedPlates = text.split(/\r?\n/).map(p => p.trim().toUpperCase());
+
+        // Récupérer la date de dernière mise à jour via l'API GitHub
+        const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/commits?path=${csvFile}&page=1&per_page=1`;
+        const apiResponse = await fetch(apiUrl);
+        const json = await apiResponse.json();
+        const lastUpdate = new Date(json[0].commit.committer.date);
+
+        document.getElementById('lastUpdate').textContent = `Dernière mise à jour du CSV : ${lastUpdate.toLocaleString()}`;
+
+      } catch (err) {
+        alert('Erreur lors du chargement du CSV: ' + err);
+      }
+    }
+
+    loadCSV();
+
+    // Démarrer caméra
+    const video = document.getElementById('video');
+    document.getElementById('startCam').addEventListener('click', async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert("getUserMedia non supporté par ce navigateur.");
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+      } catch (err) {
+        alert("Erreur accès caméra: " + err);
+      }
+    });
+
+    // Nettoyage OCR (normalisation plaques)
+    function normalizePlate(text) {
+      return text.replace(/[^A-Z0-9]/g, '')
+                 .toUpperCase()
+                 .replace(/O/g, '0')
+                 .replace(/I/g, '1')
+                 .replace(/B/g, '8');
+    }
+
+    // Distance de Levenshtein (tolérance erreurs OCR)
+    function levenshtein(a, b) {
+      const matrix = Array.from({ length: a.length + 1 }, () => []);
+      for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+      for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+      for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+          matrix[i][j] = a[i - 1] === b[j - 1]
+            ? matrix[i - 1][j - 1]
+            : Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + 1);
+        }
+      }
+      return matrix[a.length][b.length];
+    }
+
+    function isAuthorized(plate) {
+      return authorizedPlates.some(p => levenshtein(plate, p) <= 1);
+    }
+
+    // Scanner l'image depuis la vidéo
+    document.getElementById('scanBtn').addEventListener('click', async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+
+      // Extraire uniquement la zone du cadre (milieu)
+      const cropX = canvas.width * 0.2;
+      const cropY = canvas.height * 0.375;
+      const cropW = canvas.width * 0.6;
+      const cropH = canvas.height * 0.25;
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = cropW;
+      cropCanvas.height = cropH;
+      const cropCtx = cropCanvas.getContext('2d');
+      cropCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // Noir & blanc (binarisation simple)
+      const imageData = cropCtx.getImageData(0, 0, cropW, cropH);
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const avg = (imageData.data[i] + imageData.data[i+1] + imageData.data[i+2]) / 3;
+        const val = avg > 128 ? 255 : 0;
+        imageData.data[i] = imageData.data[i+1] = imageData.data[i+2] = val;
+      }
+      cropCtx.putImageData(imageData, 0, 0);
+
+      document.getElementById('result').textContent = "Analyse en cours...";
+
+      const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
+      let detected = normalizePlate(text);
+
+      let resultDiv = document.getElementById('result');
+      if (isAuthorized(detected)) {
+        resultDiv.innerHTML = `✅ Autorisé<br>${detected}`;
+        resultDiv.className = "ok";
+      } else {
+        resultDiv.innerHTML = `❌ Pas autorisé<br>${detected}`;
+        resultDiv.className = "not-ok";
+      }
+    });
+  </script>
+</body>
+</html>
