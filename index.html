@@ -16,6 +16,7 @@
       border: 4px solid rgba(0, 150, 255, 0.7);
       border-radius: 50%;
       pointer-events: none;
+      display: none; /* invisible par défaut */
     }
     video, canvas { width: 100%; max-width: 400px; border-radius: 10px; }
   </style>
@@ -31,7 +32,7 @@
   <button onclick="startCamera()">📷 Prendre la photo</button>
   <div style="position:relative; display:inline-block;">
     <video id="video" autoplay playsinline></video>
-    <div class="overlay"></div>
+    <div id="overlay" class="overlay"></div>
   </div>
   <br>
   <button onclick="capturePhoto()">✅ Capturer</button>
@@ -42,6 +43,7 @@
     let video = document.getElementById("video");
     let canvas = document.getElementById("canvas");
     let context = canvas.getContext("2d");
+    let overlay = document.getElementById("overlay");
     let stream;
 
     async function startCamera() {
@@ -49,6 +51,7 @@
         video: { facingMode: "user" } 
       });
       video.srcObject = stream;
+      overlay.style.display = "block"; // afficher cercle seulement quand la caméra démarre
     }
 
     function sanitize(text) {
@@ -68,14 +71,14 @@
 
         let filename = sanitize(societe) + "-" + sanitize(nom) + "-" + sanitize(prenom) + ".jpg";
 
-        // Ouvrir l’email pré-rempli
+        // Ouvrir email pré-rempli (⚠️ sans PJ, limitation du mailto)
         let a = document.createElement("a");
         a.href = "mailto:pascal.seillier@gmail.com"
               + "?subject=Photo%20-" + encodeURIComponent(nom + " " + prenom)
-              + "&body=" + encodeURIComponent("Nom: " + nom + "\nPrénom: " + prenom + "\nSociété: " + societe);
+              + "&body=" + encodeURIComponent("Nom: " + nom + "\nPrénom: " + prenom + "\nSociété: " + societe + "\n\n⚠️ Merci d'ajouter la photo en pièce jointe.");
         a.click();
 
-        // Téléchargement du fichier avec nom personnalisé
+        // Téléchargement auto de la photo → l’utilisateur peut l’attacher ensuite
         let imgURL = URL.createObjectURL(blob);
         let download = document.createElement("a");
         download.href = imgURL;
