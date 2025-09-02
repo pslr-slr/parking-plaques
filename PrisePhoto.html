@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Appli Photo</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    .overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 250px;
+      height: 250px;
+      margin-left: -125px;
+      margin-top: -125px;
+      border: 4px solid rgba(0, 150, 255, 0.7);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    video, canvas { width: 100%; max-width: 400px; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Formulaire Photo</h2>
+  <form id="infoForm">
+    <input type="text" id="nom" placeholder="Nom" required><br><br>
+    <input type="text" id="prenom" placeholder="Prénom" required><br><br>
+    <input type="text" id="societe" placeholder="Société" required><br><br>
+  </form>
+
+  <button onclick="startCamera()">📷 Prendre la photo</button>
+  <div style="position:relative; display:inline-block;">
+    <video id="video" autoplay playsinline></video>
+    <div class="overlay"></div>
+  </div>
+  <br>
+  <button onclick="capturePhoto()">✅ Capturer</button>
+
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <script>
+    let video = document.getElementById("video");
+    let canvas = document.getElementById("canvas");
+    let context = canvas.getContext("2d");
+    let stream;
+
+    async function startCamera() {
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "user" } 
+      });
+      video.srcObject = stream;
+    }
+
+    function sanitize(text) {
+      return text.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    }
+
+    function capturePhoto() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Convertir en JPG
+      canvas.toBlob(function(blob) {
+        let nom = document.getElementById("nom").value.trim();
+        let prenom = document.getElementById("prenom").value.trim();
+        let societe = document.getElementById("societe").value.trim();
+
+        let filename = sanitize(societe) + "-" + sanitize(nom) + "-" + sanitize(prenom) + ".jpg";
+
+        // Ouvrir l’email pré-rempli
+        let a = document.createElement("a");
+        a.href = "mailto:pascal.seillier@gmail.com"
+              + "?subject=Photo%20-" + encodeURIComponent(nom + " " + prenom)
+              + "&body=" + encodeURIComponent("Nom: " + nom + "\nPrénom: " + prenom + "\nSociété: " + societe);
+        a.click();
+
+        // Téléchargement du fichier avec nom personnalisé
+        let imgURL = URL.createObjectURL(blob);
+        let download = document.createElement("a");
+        download.href = imgURL;
+        download.download = filename;
+        download.click();
+      }, "image/jpeg", 0.9);
+    }
+  </script>
+</body>
+</html>
